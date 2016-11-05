@@ -30,9 +30,14 @@ print(gap)
 
 sheet_key <- "Key"
 printlog("Downloading", sheet_key, "to", KEY_FILE)
-
 gap %>%
   gs_download(ws = sheet_key, to = KEY_FILE, overwrite = TRUE)
+
+sheet_key <- "Picarro Data"
+printlog("Downloading", sheet_key, "to", VALVEMAP_FILE)
+gap %>%
+  gs_download(ws = sheet_key, to = VALVEMAP_FILE, overwrite = TRUE)
+
 
 printlog("All done with", SCRIPTNAME)
 closelog()

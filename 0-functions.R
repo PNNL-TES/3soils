@@ -37,10 +37,9 @@ OUTPUT_DIR		         <- "outputs/"
 DIAGNOSTICS_DIR        <- "qc_plots/"
 
 KEY_FILE               <- file.path(DATA_DIR, "gs_key.csv")
+VALVEMAP_FILE          <- file.path(DATA_DIR, "gs_valvemap.csv")
 RAWDATA_FILE           <- file.path(OUTPUT_DIR, "rawdata.csv.gz")
 RAWDATA_SAMPLES_FILE   <- file.path(OUTPUT_DIR, "rawdata_samples.csv.gz")
-VALVEMAP               <- "data/valvemap.csv"
-TREATMENTS             <- "data/treatments.csv"
 SUMMARYDATA_FILE       <- file.path(OUTPUT_DIR, "summarydata.csv")
 SUMMARYDATA_CLEAN_FILE <- file.path(OUTPUT_DIR, "summarydata_clean.csv")
 FLUXDATA_FILE          <- file.path(OUTPUT_DIR, "fluxdata.csv")
