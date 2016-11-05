@@ -20,6 +20,7 @@ library(luzlogr)       # 0.2.0
 # -----------------------------------------------------------------------------
 # Parameters for key analytical choices
 # Defined here so they can be easily used in code AND manuscript
+MAX_MEASUREMENT_TIME <- 120 # anything longer than this is an ambient sample
 MAX_MINCONC_TIME <- 10     # the minimum concentration has to occur in first 10 s
 MAX_MAXCONC_TIME <- 45     # the maximum concentration has to occur in first 45 s
 OUTLIER_GROUPS   <- 10     # Divide data into date groups and identify outliers in each
@@ -57,6 +58,7 @@ SEPARATOR		  <- "-------------------"
 print_dims <- function(d, dname = deparse(substitute(d))) {
   stopifnot(is.data.frame(d))
   printlog(dname, "rows =", nrow(d), "cols =", ncol(d))
+  invisible(d)
 } # print_dims
 
 # -----------------------------------------------------------------------------

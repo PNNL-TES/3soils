@@ -3,7 +3,7 @@
 # summaries of "samples" (groups of consecutive observations made from a given 
 # core at a point in time). It computes gas concentration changes, performs 
 # some QC, merges the Picarro data with valve map and other ancillary data,
-# and writes `outputs/summarydata.csv`.
+# and writes SUMMARYDATA_FILE.
 # 
 # Ben Bond-Lamberty November 2016
 
@@ -11,6 +11,33 @@ source("0-functions.R")
 
 SCRIPTNAME  	<- "3-summarize.R"
 PROBLEM       <- FALSE
+
+
+qc_keydata <- function(keydata) {
+  dupes <- which(duplicated(keydata$`Field_#`) |
+                   duplicated(keydata$`Core_#`))
+  if(length(dupes)) {
+    flaglog("There are duplicate core and/or field numbers in the key data:")
+    print(keydata[dupes,])
+    PROBLEM <<- TRUE
+  }
+}
+
+qc_valvemap <- function(valvemap) {
+  valvemap %>% 
+    filter(!is.na(Valve)) %>%
+    group_by(Date, Valve) %>% 
+    summarise(n = n()) %>%
+    summarise(dupeflag = any(n > 1)) %>%
+    filter(dupeflag) ->
+    dupes
+  
+  if(nrow(dupes)) {
+    flaglog("There are duplicate core number in the valvemap data on these dates:")
+    print(dupes)
+    PROBLEM <<- TRUE
+  }
+}
 
 
 # ==============================================================================
@@ -29,9 +56,9 @@ read_csv(RAWDATA_FILE, col_types = "ccddddiiiddddddddc") %>%
   filter(MPVPosition == trunc(MPVPosition)) %>%
   # Convert date/time to POSIXct
   mutate(DATETIME = ymd_hms(paste(DATE, TIME))) %>%
-  arrange(DATETIME) ->
+  arrange(DATETIME) %>%
+  print_dims("rawdata") ->
   rawdata
-print_dims(rawdata)
 print(summary(rawdata))
 printlog("First timestamp:")
 print(min(rawdata$DATETIME))
@@ -53,9 +80,18 @@ rawdata %>%
   mutate(elapsed_seconds = difftime(DATETIME, min(DATETIME), units = "secs")) ->
   rawdata_samples
 
+printlog("Identifying and removing ambient samples...")
+rawdata_samples %>%
+  group_by(samplenum) %>%
+  summarise(max_seconds = max(as.numeric(elapsed_seconds))) %>%
+  left_join(rawdata_samples, by = "samplenum") %>%
+  filter(max_seconds <= MAX_MEASUREMENT_TIME) %>%
+  select(-max_seconds) %>%
+  print_dims("rawdata_samples") ->
+  rawdata_samples
+
 printlog("Visualizing...")
 p <- ggplot(rawdata_samples, aes(x = elapsed_seconds, color = DATE, group = samplenum)) +
-  xlim(c(0,150)) + 
   facet_wrap(~MPVPosition) + 
   ggtitle("CO2 concentration by date and valve")
 print(p + geom_line(aes(y = CO2_dry)))
@@ -63,101 +99,108 @@ save_plot("co2_by_valve")
 print(p + geom_line(aes(y = CH4_dry)))
 save_plot("ch4_by_valve")
 
-stop()
-
 # -----------------------------------------------------------------------------
-# Load and QC the key data
+# Load and QC the key and valvemap data
 
-printlog("Loading valve map (key) data...")
+printlog("Loading key data...")
 read_csv(KEY_FILE, col_types = "ciiccc", na = c("NA", "", "na")) %>%
-  filter(!is.na(`Core_#`)) ->
+  filter(!is.na(`Core_#`)) %>%
+  print_dims("keydata") ->
   keydata
-# printlog( "Converting date/time info to POSIXct..." )
-# keydata$StartDateTime <- mdy_hm(paste(keydata$Date, keydata$Time_set_start_UTC))
-# keydata <- arrange(keydata, StartDateTime)
-# keydata$valvemaprow <- seq_len(nrow(keydata))
-qc_valvemap(keydata)
+
+qc_keydata(keydata)
+
+printlog("Loading valve map data...")
+read_csv(VALVEMAP_FILE, col_types = "cccicidcc", na = c("NA", "", "na")) %>%
+  mutate(Date = mdy(Date)) %>%
+  mutate(Time = lubridate::hm(Start_time_PDT)) %>%
+  arrange(Date, Time) %>%
+  print_dims("valvemap") ->
+  valvemap
+
+qc_valvemap(valvemap)
+
 
 # -----------------------------------------------------------------------------
 # Compute concentration changes and match the Picarro data with valvemap data
-
-# Function to match up Picarro data with mapping file data
-# This is done by date and valve number (see plot saved above)
-matchfun <- function(DATETIME, MPVPosition) {
-  DATETIME <- as.POSIXct(DATETIME, origin = lubridate::origin, tz="UTC")
-  rowmatches <- which(DATETIME >= valvemap$StartDateTime & 
-                        yday(DATETIME) == yday(valvemap$StartDateTime) &
-                        MPVPosition == valvemap$MPVPosition)
-  if(length(rowmatches) == 0) rowmatches <- NA
-  max(rowmatches)  # return latest time match
-}
 
 printlog( "Computing summary statistics for each sample..." )
 
 # We want to apply different criteria here, so three different pipelines
 # to compute the min and max gas concentrations
-summarydata_min <- rawdata_samples %>%
+rawdata_samples %>%
   filter(elapsed_seconds <= MAX_MINCONC_TIME) %>%
   group_by(samplenum) %>%
   summarise(min_CO2 = min(CO2_dry),
             min_CO2_time = nth(elapsed_seconds, which.min(CO2_dry)),
             min_CH4 = min(CH4_dry),
-            min_CH4_time = nth(elapsed_seconds, which.min(CH4_dry)))
+            min_CH4_time = nth(elapsed_seconds, which.min(CH4_dry))) ->
+  summarydata_min
 
 # Now we want to look for the max concentration AFTER the minimum
-rawdata_temp <- rawdata_samples %>%
-  left_join(summarydata_min, by = "samplenum") 
+rawdata_samples %>%
+  left_join(summarydata_min, by = "samplenum") ->
+  rawdata_temp
 
-summarydata_maxCO2 <- rawdata_temp %>%
+rawdata_temp %>%
   filter(elapsed_seconds > min_CO2_time & elapsed_seconds < MAX_MAXCONC_TIME) %>%
+  group_by(samplenum) %>%
   summarise(max_CO2 = max(CO2_dry),
-            max_CO2_time = nth(elapsed_seconds, which.max(CO2_dry))
-  )
-summarydata_maxCH4 <- rawdata_temp %>%
+            max_CO2_time = nth(elapsed_seconds, which.max(CO2_dry))) ->
+  summarydata_maxCO2
+rawdata_temp %>%
   filter(elapsed_seconds > min_CH4_time & elapsed_seconds < MAX_MAXCONC_TIME) %>%
+  group_by(samplenum) %>%
   summarise(max_CH4 = max(CH4_dry),
-            max_CH4_time = nth(elapsed_seconds, which.max(CH4_dry)))
+            max_CH4_time = nth(elapsed_seconds, which.max(CH4_dry))) ->
+  summarydata_maxCH4
 
 # Final pipeline: misc other data, and match up with valve map entries
-summarydata_other <- rawdata_samples %>%
+rawdata_samples %>%
   group_by(samplenum) %>%
   summarise(
     DATETIME = mean(DATETIME),
     N = n(),
     MPVPosition	= mean(MPVPosition),
-    h2o_reported = mean(h2o_reported),
-    valvemaprow = matchfun(DATETIME, MPVPosition)) 
+    h2o_reported = mean(h2o_reported)) ->
+  summarydata_other
 
 # Merge pieces together to form final summary data set
 printlog("Removing N=1 and MPVPosition=0 data, and merging...")
-summarydata <- summarydata_other %>%
+summarydata_other %>%
   filter(N > 1) %>% # N=1 observations are...? Picarro quirk
   filter(MPVPosition > 0) %>% # ? Picarro quirk
   left_join(summarydata_min, by = "samplenum") %>%
   left_join(summarydata_maxCO2, by = "samplenum") %>% 
-  left_join(summarydata_maxCH4, by = "samplenum")
+  left_join(summarydata_maxCH4, by = "samplenum") ->
+  summarydata
 
 printlog("Merging Picarro and mapping data...")
-summarydata <- left_join(summarydata, valvemap, by = c("MPVPosition", "valvemaprow"), all.x=TRUE)
+summarydata %>%
+  left_join(valvemap, by = c("MPVPosition" = "Valve")) ->
+  summarydata
 
-printlog("Reading and merging treatment data...")
-trtdata <- read_csv(TREATMENTS, skip = 1)
-summarydata <- left_join(summarydata, trtdata, by = "Core")
+printlog("Reading and merging key data...")
+left_join(summarydata, keydata, by = "Core_#") -> 
+  summarydata
+
+# The treatment codes should match. Warn if not, then proceed
+# with the treatment defined in the key data
+if(nrow(subset(summarydata, tolower(Treatment.x) != tolower(Treatment.y)))) {
+  printlog("WARNING - some treatments in the valve data don't match those given in key data")
+  printlog("This probably doesn't matter but may indicate a problem")
+}
+summarydata %>%
+  select(-Treatment.x) %>%
+  rename(Treatment = Treatment.y) ->
+  summarydata
 
 printlog("Computing per-second rates...")
-summarydata <- summarydata %>%
+summarydata %>%
   mutate(CO2_ppm_s = (max_CO2 - min_CO2) / (max_CO2_time - min_CO2_time),
          CH4_ppb_s = (max_CH4 - min_CH4) / (max_CH4_time - min_CH4_time),
-         inctime_days = 1 + as.numeric(difftime(DATETIME, min(DATETIME), units = "days")))
-
-printlog("Saving a comparison of MPVPosition sequence in Picarro data and valvemap")
-checkdata <- select(summarydata, DATETIME, MPVPosition)
-checkdata$sequence <- seq_len(nrow(checkdata))
-vdata <- data.frame(sequence = seq_len(nrow(valvemap)),
-                    DATETIME_valvemap = paste(valvemap$Date, valvemap$Time_set_start_UTC),
-                    MPVPosition_valvemap = valvemap$MPVPosition)
-MPVPosition_checkdata <- left_join(vdata, checkdata, by = "sequence")
-save_data(MPVPosition_checkdata)
+         inctime_days = 1 + as.numeric(difftime(DATETIME, min(DATETIME), units = "days"))) ->
+  summarydata
 
 # -----------------------------------------------------------------------------
 # Done! 
