@@ -48,14 +48,10 @@ openlog(file.path(outputdir(), paste0(SCRIPTNAME, ".log.txt")), sink = TRUE) # o
 printlog("Welcome to", SCRIPTNAME)
 
 printlog("Reading in raw data...")
-read_csv(RAWDATA_FILE, col_types = "ccddddiiiddddddddc") %>%
-  # immediately discard columns we don't need
-  select(DATE, TIME, MPVPosition, CH4_dry, CO2_dry, h2o_reported) %>%
-  # Fractional solenoid values mean that the analyzer was shifting
-  # between two samples. Discard these.
-  filter(MPVPosition == trunc(MPVPosition)) %>%
+read_csv(RAWDATA_FILE, col_types = "ccciddddc") %>%
   # Convert date/time to POSIXct
   mutate(DATETIME = ymd_hms(paste(DATE, TIME))) %>%
+  select(-DATE, -TIME) %>%
   arrange(DATETIME) %>%
   print_dims("rawdata") ->
   rawdata
@@ -70,55 +66,46 @@ print(max(rawdata$DATETIME))
 
 # Assign a different sample number to each sample group 
 # (we know we're on a new sample when MPVPosition changes)
-printlog("Assigning sample numbers...")
-oldsampleflag <- with(rawdata, c(FALSE, MPVPosition[-length(MPVPosition)] == MPVPosition[-1]))
-rawdata$samplenum <- cumsum(!oldsampleflag)
-
-printlog("Computing elapsed seconds...")
+printlog("Assigning sample numbers and computing elapsed time...")
 rawdata %>%
+  mutate(newsample = MPVPosition != lag(MPVPosition)) %>%
+  replace_na(list(newsample = FALSE)) %>% 
+  mutate(samplenum = cumsum(newsample)) %>%
+  select(-newsample) %>%
   group_by(samplenum) %>%
-  mutate(elapsed_seconds = difftime(DATETIME, min(DATETIME), units = "secs")) ->
+  mutate(elapsed_seconds = as.double(difftime(DATETIME, min(DATETIME), units = "secs"))) ->
   rawdata_samples
 
-printlog("Identifying and removing ambient samples...")
+printlog("Removing ambient samples...")
+AMBIENT_VALVE <- 16
 rawdata_samples %>%
+  filter(MPVPosition != AMBIENT_VALVE) %>% 
   group_by(samplenum) %>%
-  summarise(max_seconds = max(as.numeric(elapsed_seconds))) %>%
-  left_join(rawdata_samples, by = "samplenum") %>%
-  filter(max_seconds <= MAX_MEASUREMENT_TIME) %>%
-  select(-max_seconds) %>%
+#  filter(max(elapsed_seconds) <= MAX_MEASUREMENT_TIME) %>%
   print_dims("rawdata_samples") ->
   rawdata_samples
 
 printlog("Visualizing...")
-p <- ggplot(rawdata_samples, aes(x = elapsed_seconds, color = DATE, group = samplenum)) +
-  facet_wrap(~MPVPosition) + 
-  ggtitle("CO2 concentration by date and valve")
-print(p + geom_line(aes(y = CO2_dry)))
+p <- ggplot(rawdata_samples, aes(x = elapsed_seconds, color = yday(DATETIME), group = samplenum)) +
+  facet_wrap(~MPVPosition, scales = "free_y") + 
+  ggtitle("Concentration by date and valve")
+print(p + geom_line(aes(y = CO2_dry)) + xlim(c(0, 60)))
 save_plot("co2_by_valve")
-print(p + geom_line(aes(y = CH4_dry)))
+print(p + geom_line(aes(y = CH4_dry)) + xlim(c(0, 60)))
 save_plot("ch4_by_valve")
 
 # -----------------------------------------------------------------------------
 # Load and QC the key and valvemap data
 
 printlog("Loading key data...")
-read_csv(KEY_FILE, col_types = "ciiccc", na = c("NA", "", "na")) %>%
-  filter(!is.na(`Core_#`)) %>%
+read_csv(KEY_FILE) %>%
+  mutate(Picarro_start = parse_date_time(Saturation_Picarro_Start_time, "%H:%M Op %m/%d/%Y", tz = "America/Los_Angeles"),
+         Picarro_stop = parse_date_time(Picarro_Stop_time, "%H:%M Op %m/%d/%Y", tz = "America/Los_Angeles")) %>% 
+  select(Core_ID, Treatment, valve_number, Picarro_start, Picarro_stop) %>%
   print_dims("keydata") ->
   keydata
 
-qc_keydata(keydata)
-
-printlog("Loading valve map data...")
-read_csv(VALVEMAP_FILE, col_types = "cccicidcc", na = c("NA", "", "na")) %>%
-  mutate(Date = mdy(Date)) %>%
-  mutate(Time = lubridate::hm(Start_time_PDT)) %>%
-  arrange(Date, Time) %>%
-  print_dims("valvemap") ->
-  valvemap
-
-qc_valvemap(valvemap)
+#qc_keydata(keydata)
 
 
 # -----------------------------------------------------------------------------
@@ -155,17 +142,18 @@ rawdata_temp %>%
             max_CH4_time = nth(elapsed_seconds, which.max(CH4_dry))) ->
   summarydata_maxCH4
 
-# Final pipeline: misc other data, and match up with valve map entries
+# Misc other data, and match up with valve map entries
 rawdata_samples %>%
   group_by(samplenum) %>%
   summarise(
     DATETIME = mean(DATETIME),
     N = n(),
     MPVPosition	= mean(MPVPosition),
-    h2o_reported = mean(h2o_reported)) ->
+    h2o_reported = mean(h2o_reported)) %>% 
+  mutate(DATETIME = with_tz(DATETIME, "America/Los_Angeles")) ->
   summarydata_other
 
-# Merge pieces together to form final summary data set
+# Finally, merge pieces together to form final summary data set
 printlog("Removing N=1 and MPVPosition=0 data, and merging...")
 summarydata_other %>%
   filter(N > 1) %>% # N=1 observations are...? Picarro quirk
@@ -175,32 +163,40 @@ summarydata_other %>%
   left_join(summarydata_maxCH4, by = "samplenum") ->
   summarydata
 
-printlog("Merging Picarro and mapping data...")
-summarydata %>%
-  left_join(valvemap, by = c("MPVPosition" = "Valve")) ->
-  summarydata
+printlog("Joining key data and Picarro output...")
+newdata <- list()
+for(i in seq_len(nrow(keydata))) {
+  d <- filter(summarydata, DATETIME >= keydata$Picarro_start[i], DATETIME <= keydata$Picarro_stop[i])
+  newdata[[i]] <- left_join(keydata[i,], d, by = c("valve_number" = "MPVPosition"))
+}
+newdata <- bind_rows(newdata)
 
-printlog("Reading and merging key data...")
-left_join(summarydata, keydata, by = "Core_#") -> 
-  summarydata
 
 # The treatment codes should match. Warn if not, then proceed
 # with the treatment defined in the key data
-if(nrow(subset(summarydata, tolower(Treatment.x) != tolower(Treatment.y)))) {
-  printlog("WARNING - some treatments in the valve data don't match those given in key data")
-  printlog("This probably doesn't matter but may indicate a problem")
-}
-summarydata %>%
-  select(-Treatment.x) %>%
-  rename(Treatment = Treatment.y) ->
-  summarydata
+# if(nrow(subset(summarydata, tolower(Treatment.x) != tolower(Treatment.y)))) {
+#   printlog("WARNING - some treatments in the valve data don't match those given in key data")
+#   printlog("This probably doesn't matter but may indicate a problem")
+# }
+# summarydata %>%
+#   select(-Treatment.x) %>%
+#   rename(Treatment = Treatment.y) ->
+#   summarydata
 
 printlog("Computing per-second rates...")
-summarydata %>%
+newdata %>%
   mutate(CO2_ppm_s = (max_CO2 - min_CO2) / (max_CO2_time - min_CO2_time),
          CH4_ppb_s = (max_CH4 - min_CH4) / (max_CH4_time - min_CH4_time),
          inctime_days = 1 + as.numeric(difftime(DATETIME, min(DATETIME), units = "days"))) ->
-  summarydata
+  finaldata
+
+finaldata %>% group_by(yday(DATETIME), Treatment) %>% summarise(CO2_ppm_s = mean(CO2_ppm_s), DATETIME = mean(DATETIME)) -> avg
+
+p <- ggplot(finaldata, aes(DATETIME, CO2_ppm_s)) + geom_line(aes(color = as.factor(Core_ID))) + facet_grid(~Treatment)
+p <- p + geom_line(data = avg, color="black", size = 1) + coord_cartesian(ylim = c(0, 200))
+print(p)
+save_plot("summary_CO2_ppm_s")
+
 
 # -----------------------------------------------------------------------------
 # Done! 

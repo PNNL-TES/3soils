@@ -36,23 +36,22 @@ read_outputfile <- function(fqfn) {
 
 # -----------------------------------------------------------------------------
 # scan a directory and process all files in it, returning tempfile names
-process_directory <- function(input_path, tempfile) {
-  samplenum <- 0
+process_directory <- function(input_path) {
   filelist <- list.files(path = input_path, 
                          pattern = "dat$|dat.gz$|dat.zip$", 
-                         recursive = TRUE)
-  ncolumns <- NA
-  for(f in seq_along(filelist)) {
-    d <- read_outputfile(file.path(input_path, filelist[f]))
-
-    if(f > 1 & ncol(d) != ncolumns)
-      stop("Columns differ between files!")
-    ncolumns <- ncol(d)
-    
-    first <- !file.exists(tempfile)
-    write.table(d, tempfile, row.names = FALSE, append = !first, 
-                col.names = first, sep = ",")
+                         recursive = TRUE,
+                         full.names = TRUE)
+  filedata <- list()
+  for(f in filelist) {
+    print(f)
+    tibble::as_tibble(read.table(f, header = TRUE, stringsAsFactors = FALSE)) %>%
+      # select only the columns we need, and discard any fractional valve numbers
+      select(DATE, TIME, ALARM_STATUS, MPVPosition, CH4_dry, CO2_dry, h2o_reported) %>%
+      filter(MPVPosition == floor(MPVPosition)) ->
+      filedata[[basename(f)]]
   }
+  filedata %>%
+    bind_rows(.id = "filename")
 }
 
 # ==============================================================================
@@ -62,16 +61,11 @@ openlog(file.path(outputdir(), paste0(SCRIPTNAME, ".log.txt")), sink = TRUE)
 
 printlog("Welcome to", SCRIPTNAME)
 printlog("Data directory is", PICARRO_DATA_DIR)
-tf <- tempfile()
-printlog("Tempfile is", tf)
 
-process_directory(file.path(PICARRO_DATA_DIR), tf)
+site <- "dwp"
 
-printlog(SEPARATOR)
-printlog("Reading in full data set...")
-rawdata <- readr::read_csv(tf, col_types = "ccddddiiiddddddddc")
-print_dims(rawdata)
-print(summary(rawdata))
+rawdata <- process_directory(file.path(PICARRO_DATA_DIR, site))
+rawdata$site <- site
 
 printlog("Writing output file...")
 save_data(rawdata, fn = RAWDATA_FILE, scriptfolder = FALSE)

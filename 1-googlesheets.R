@@ -8,7 +8,7 @@ source("0-functions.R")
 SCRIPTNAME  	<- "1-googlesheets.R"
 PROBLEM       <- FALSE
 
-library(googlesheets) # 0.2.1
+library(googlesheets) # 0.2.2
 
 # ==============================================================================
 # Main 
@@ -19,25 +19,29 @@ printlog("Welcome to", SCRIPTNAME)
 
 # Register file - need to be authenticated to Google
 # Not storing an OAuth token here
-# File is "CPCRW Soil Cores Key, Weights"
+# File is "DWP_Picarro_data_collection"
 
 # Note that "registration by key is the safest, long-run strategy"
 # https://cran.r-project.org/web/packages/googlesheets/vignettes/basic-usage.html
-KEY <- "1vYmwhZaymQNjkl-IPZPxPe1-aX8CQWyUQVX7Ub8yZSs"
+KEY <- "15iM3XSFchLNm010D9n9pTpFapw0hX7unVqh35rtqpaI"
 gap <- gs_key(KEY)
 
 print(gap)
+keydata <- list()
+sheets <- c("Drought", "Field_moist", "Saturation_II")
+for(sheet_key in sheets) {
+  
+  printlog("Downloading", sheet_key, "to", KEY_FILE)
+  gap %>%
+    gs_download(ws = sheet_key, to = KEY_FILE, overwrite = TRUE)
+  keydata[[sheet_key]] <- read_csv(KEY_FILE, na = c("", "NA", "n/a"),
+                                   col_types = cols(Headspace_height = col_double(),
+                                                    Weight_upon_saturation = col_double()))
+  
+}
 
-sheet_key <- "Key"
-printlog("Downloading", sheet_key, "to", KEY_FILE)
-gap %>%
-  gs_download(ws = sheet_key, to = KEY_FILE, overwrite = TRUE)
-
-sheet_key <- "Picarro Data"
-printlog("Downloading", sheet_key, "to", VALVEMAP_FILE)
-gap %>%
-  gs_download(ws = sheet_key, to = VALVEMAP_FILE, overwrite = TRUE)
-
+keydata <- bind_rows(keydata)
+save_data(keydata, fn = KEY_FILE, scriptfolder = FALSE)
 
 printlog("All done with", SCRIPTNAME)
 closelog()

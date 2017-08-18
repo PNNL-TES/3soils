@@ -13,6 +13,7 @@ library(readr)         # 1.0.0
 library(lubridate)     # 1.6.0
 library(stringr)       # 1.1.0
 library(luzlogr)       # 0.2.0
+library(tidyr)
 
 #if(require(checkpoint))   # 0.3.15
 #    try(checkpoint("2016-04-01")) # 'try' b/c errors w/o network
