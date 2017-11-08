@@ -19,28 +19,29 @@ printlog("Welcome to", SCRIPTNAME)
 
 # Register file - need to be authenticated to Google
 # Not storing an OAuth token here
-# File is "DWP_Picarro_data_collection"
+# File is "3Soils_CPCRW_SR_DWP_PicarroLog"
 
 # Note that "registration by key is the safest, long-run strategy"
 # https://cran.r-project.org/web/packages/googlesheets/vignettes/basic-usage.html
-KEY <- "15iM3XSFchLNm010D9n9pTpFapw0hX7unVqh35rtqpaI"
-gap <- gs_key(KEY)
+KEY <- "1wsI3tldbhhMDSDoRejmS2jE2c9U-75sht_Dyum3QUBY"
+valvemap <- gs_key(KEY)
+print(valvemap)
 
-print(gap)
-keydata <- list()
-sheets <- c("Drought", "Field_moist", "Saturation_II")
-for(sheet_key in sheets) {
-  
-  printlog("Downloading", sheet_key, "to", KEY_FILE)
-  gap %>%
-    gs_download(ws = sheet_key, to = KEY_FILE, overwrite = TRUE)
-  keydata[[sheet_key]] <- read_csv(KEY_FILE, na = c("", "NA", "n/a"),
-                                   col_types = cols(Headspace_height = col_double(),
-                                                    Weight_upon_saturation = col_double()))
-  
-}
+vmdata <- list()
+tf <- tempfile(fileext = ".csv")
+sheet <- "valve_map"
+printlog("Downloading", sheet)
+valvemap %>%
+  gs_download(ws = sheet, to = tf, overwrite = TRUE)
+vmdata <- read_csv(tf, na = c("", "NA", "n/a", "na"))
 
-keydata <- bind_rows(keydata)
+sheet <- "sampleID_key"
+printlog("Downloading", sheet)
+valvemap %>%
+  gs_download(ws = sheet, to = tf, overwrite = TRUE)
+keydata <- read_csv(tf, na = c("", "NA", "n/a", "na"))
+
+save_data(vmdata, fn = VALVEMAP_FILE, scriptfolder = FALSE)
 save_data(keydata, fn = KEY_FILE, scriptfolder = FALSE)
 
 printlog("All done with", SCRIPTNAME)
