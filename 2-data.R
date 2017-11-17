@@ -43,7 +43,7 @@ process_directory <- function(input_path) {
                          full.names = TRUE)
   filedata <- list()
   for(f in filelist) {
-    print(f)
+    printlog("Reading", f)
     tibble::as_tibble(read.table(f, header = TRUE, stringsAsFactors = FALSE)) %>%
       # select only the columns we need, and discard any fractional valve numbers
       select(DATE, TIME, ALARM_STATUS, MPVPosition, CH4_dry, CO2_dry, h2o_reported) %>%
@@ -62,10 +62,14 @@ openlog(file.path(outputdir(), paste0(SCRIPTNAME, ".log.txt")), sink = TRUE)
 printlog("Welcome to", SCRIPTNAME)
 printlog("Data directory is", PICARRO_DATA_DIR)
 
-site <- "dwp"
+sitelist <- c("dwp", "cpcrw", "sr")
 
-rawdata <- process_directory(file.path(PICARRO_DATA_DIR, site))
-rawdata$site <- site
+rawdata <- list()
+for(site in sitelist) {
+  rawdata[[site]] <- process_directory(file.path(PICARRO_DATA_DIR, site))
+}
+
+rawdata <- bind_rows(rawdata, .id = "site")
 
 printlog("Writing output file...")
 save_data(rawdata, fn = RAWDATA_FILE, scriptfolder = FALSE)
