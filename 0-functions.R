@@ -48,8 +48,8 @@ FLUXDATA_FILE          <- file.path(OUTPUT_DIR, "fluxdata.csv")
 FLUXDATA_FINAL_FILE    <- file.path(OUTPUT_DIR, "fluxdata_final.csv")
 FLUXDATA_CUM_FILE      <- file.path(OUTPUT_DIR, "fluxdata_cum.csv")
 FLUXDATA_CUM_CORE_FILE <- file.path(OUTPUT_DIR, "fluxdata_cum_core.csv")
-COREDATA_FILE          <- "data/drymasses.csv"
-CNDATA_FILE            <- "data/uga-soil_samples.csv"
+#COREDATA_FILE          <- "data/drymasses.csv"
+#CNDATA_FILE            <- "data/uga-soil_samples.csv"
 
 SEPARATOR		  <- "-------------------"
 

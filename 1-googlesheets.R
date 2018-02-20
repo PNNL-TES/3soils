@@ -1,7 +1,5 @@
-# Process Picarro data for the 3soils lab experiment
-# This script reads all available Picarro outputs in `data/picarro/`,
-# concatenating and writing to an `outputs/rawdata.csv.gz` file.
-# Ben Bond-Lamberty July 2015
+# Download the valve_map and sampleID_key files from Google Sheets
+# Ben Bond-Lamberty November 2017
 
 source("0-functions.R")
 

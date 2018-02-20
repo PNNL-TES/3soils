@@ -90,22 +90,21 @@ p <- ggplot(rawdata_samples, aes(x = elapsed_seconds, color = yday(DATETIME), gr
   facet_wrap(~MPVPosition, scales = "free_y") + 
   ggtitle("Concentration by date and valve")
 print(p + geom_line(aes(y = CO2_dry)) + xlim(c(0, 60)))
-save_plot("co2_by_valve")
+save_plot("co2_by_valve", ptype = ".png")
 print(p + geom_line(aes(y = CH4_dry)) + xlim(c(0, 60)))
-save_plot("ch4_by_valve")
+save_plot("ch4_by_valve", ptype = ".png")
 
 # -----------------------------------------------------------------------------
 # Load and QC the key and valvemap data
 
 # The 'valvemap' data maps Picarro valve numbers to sample IDs
 read_csv(VALVEMAP_FILE) %>% 
-#  select(-Site, -Core_ID, -Treatment) %>% 
   mutate(rownum = row_number()) %>% 
   filter(!is.na(SampleID)) %>%
   mutate(Picarro_start = mdy_hm(Start_Date_Time, tz = "America/Los_Angeles"),
          Picarro_stop = mdy_hm(Stop_Date_Time, tz = "America/Los_Angeles"),
          sequence_valve = as.numeric(sequence_valve)) %>% 
-  select(rownum, SampleID, PHASE, Site, Picarro_start, Picarro_stop, sequence_valve, Soil_dry_weight_equivalent_g) %>% 
+  select(rownum, SampleID, PHASE, Site, Picarro_start, Picarro_stop, sequence_valve, Soil_dry_weight_equivalent_g, Headspace_height_cm) %>% 
   arrange(Picarro_start) ->
   valvemap
 
@@ -187,10 +186,12 @@ for(i in seq_len(nrow(valvemap))) {
   valvemap$picarro_records[i] <- nrow(d)
   newdata[[i]] <- left_join(valvemap[i,], d, by = c("sequence_valve" = "MPVPosition"))
 }
-newdata <- bind_rows(newdata)
+bind_rows(newdata) %>% 
+  select(-Picarro_start, -Picarro_stop) ->
+  newdata
 
 # Diagnostic plot - how well do data match?
-p <- qplot(DATETIME, MPVPosition, data=summarydata, color = SampleID, geom="jitter")
+p <- qplot(DATETIME, sequence_valve, data=newdata, color = SampleID, geom="jitter")
 print(p)
 save_plot("valvemap_diagnostic1")
 
@@ -198,45 +199,26 @@ p <- qplot(Picarro_start, SampleID, color=picarro_records>0, data=valvemap)
 print(p)
 save_plot("valvemap_diagnostic2")
 
-stop("OK")
-
-
-# The treatment codes should match. Warn if not, then proceed
-# with the treatment defined in the key data
-# if(nrow(subset(summarydata, tolower(Treatment.x) != tolower(Treatment.y)))) {
-#   printlog("WARNING - some treatments in the valve data don't match those given in key data")
-#   printlog("This probably doesn't matter but may indicate a problem")
-# }
-# summarydata %>%
-#   select(-Treatment.x) %>%
-#   rename(Treatment = Treatment.y) ->
-#   summarydata
 
 printlog("Computing per-second rates...")
 newdata %>%
-  group_by(SampleID) %>%
+  filter(!is.na(DATETIME), !is.na(Site)) %>% 
+  group_by(SampleID, PHASE, Site) %>%
   mutate(CO2_ppm_s = (max_CO2 - min_CO2) / (max_CO2_time - min_CO2_time),
          CH4_ppb_s = (max_CH4 - min_CH4) / (max_CH4_time - min_CH4_time),
-         inctime_hours = as.numeric(difftime(DATETIME, min(DATETIME, na.rm = TRUE), units = "hours"))) %>%
+         inctime_hours = as.numeric(difftime(DATETIME, min(DATETIME, na.rm = TRUE), units = "hours"))) -> #%>%
   # If multiple readings taken in a day, summarise
-  group_by(yday(DATETIME), SampleID) %>%
-  mutate(CO2_ppm_s_daily = mean(CO2_ppm_s),
-         CH4_ppb_s_daily = mean(CH4_ppb_s)) %>%
-  filter(!is.na(Site)) ->
-  finaldata
+  # group_by(yday(DATETIME), SampleID) %>%
+  # mutate(CO2_ppm_s_daily = mean(CO2_ppm_s),
+  #        CH4_ppb_s_daily = mean(CH4_ppb_s)) ->
+  summarydata
 
-p <- ggplot(finaldata, aes(inctime_hours, CO2_ppm_s_daily, color = PHASE)) + geom_line(aes(group=SampleID)) + facet_grid(Site~., scales="free")
+p <- ggplot(summarydata, aes(inctime_hours, CO2_ppm_s_daily, color = PHASE)) + geom_line(aes(group=SampleID)) + facet_grid(Site~., scales="free")
 print(p)
 save_plot("sanity_CO2")
-p <- ggplot(finaldata, aes(inctime_hours, CH4_ppb_s_daily, color = PHASE)) + geom_line(aes(group=SampleID)) + facet_grid(Site~., scales="free")
+p <- ggplot(summarydata, aes(inctime_hours, CH4_ppb_s_daily, color = PHASE)) + geom_line(aes(group=SampleID)) + facet_grid(Site~., scales="free")
 print(p)
 save_plot("sanity_CH4")
-
-
-p <- ggplot(finaldata, aes(DATETIME, CO2_ppm_s)) + geom_line(aes(color = as.factor(Core_ID))) + facet_grid(~Treatment)
-p <- p + geom_line(data = avg, color="black", size = 1) + coord_cartesian(ylim = c(0, 200))
-print(p)
-save_plot("summary_CO2_ppm_s")
 
 
 # -----------------------------------------------------------------------------
