@@ -81,7 +81,7 @@ AMBIENT_VALVE <- 16
 rawdata_samples %>%
   filter(MPVPosition != AMBIENT_VALVE) %>% 
   group_by(samplenum) %>%
-#  filter(max(elapsed_seconds) <= MAX_MEASUREMENT_TIME) %>%
+  #  filter(max(elapsed_seconds) <= MAX_MEASUREMENT_TIME) %>%
   print_dims("rawdata_samples") ->
   rawdata_samples
 
@@ -98,27 +98,35 @@ save_plot("ch4_by_valve", ptype = ".png")
 # Load and QC the key and valvemap data
 
 # The 'valvemap' data maps Picarro valve numbers to sample IDs
-read_csv(VALVEMAP_FILE) %>% 
+printlog(SEPARATOR)
+printlog("Reading valve and core mapping data...")
+read_csv(VALVEMAP_FILE, na = c("NA", "#VALUE!")) %>% 
   mutate(rownum = row_number()) %>% 
   filter(!is.na(SampleID)) %>%
   mutate(Picarro_start = mdy_hm(Start_Date_Time, tz = "America/Los_Angeles"),
          Picarro_stop = mdy_hm(Stop_Date_Time, tz = "America/Los_Angeles"),
          sequence_valve = as.numeric(sequence_valve)) %>% 
-  select(rownum, SampleID, PHASE, Site, Picarro_start, Picarro_stop, sequence_valve, Soil_dry_weight_equivalent_g, Headspace_height_cm) %>% 
+  select(rownum, SampleID, PHASE, Site, Picarro_start, Picarro_stop, sequence_valve, Headspace_height_cm) %>% 
   arrange(Picarro_start) ->
   valvemap
 
-# The 'key' data maps sample IDs to core information
+# The `gs_key` file maps SampleID to (at the moment) core dry mass and pH
+read_csv(KEY_FILE) %>% 
+  select(SampleID, soil_pH_water, DryMass_SoilOnly_g) %>% 
+  right_join(valvemap, by = "SampleID") ->
+  valvemap
 
-# printlog("Loading key data...")
-# read_csv(KEY_FILE) %>%
-#   mutate(Picarro_start = parse_date_time(date_incubated, "%m/%d/%Y", tz = "America/Los_Angeles"),
-#          Picarro_stop = parse_date_time(date_deconstructed, "%H:%M Op %m/%d/%Y", tz = "America/Los_Angeles")) %>% 
-#   select(Core_ID, Treatment, valve_number, Picarro_start, Picarro_stop) %>%
-#   print_dims("keydata") ->
-#   keydata
+# valvemap diagnostic
+valvemap %>% 
+  group_by(Site, SampleID) %>% 
+  summarise_at("DryMass_SoilOnly_g", funs(n(), mean, sd, max, min)) %>% 
+  ggplot(aes(SampleID, mean, color=Site)) + 
+  geom_point() + geom_linerange(aes(ymax = max, ymin = min)) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("DryMass_SoilOnly_g")
+save_plot("diag_DryMass_SoilOnly_g", width = 8, height = 4)
 
-#qc_keydata(keydata)
+
 
 # -----------------------------------------------------------------------------
 # Compute concentration changes and match the Picarro data with valvemap data
@@ -206,11 +214,13 @@ newdata %>%
   group_by(SampleID, PHASE, Site) %>%
   mutate(CO2_ppm_s = (max_CO2 - min_CO2) / (max_CO2_time - min_CO2_time),
          CH4_ppb_s = (max_CH4 - min_CH4) / (max_CH4_time - min_CH4_time),
-         inctime_hours = as.numeric(difftime(DATETIME, min(DATETIME, na.rm = TRUE), units = "hours"))) -> #%>%
+         inctime_hours = as.numeric(difftime(DATETIME, min(DATETIME, na.rm = TRUE), units = "hours"))) %>%
   # If multiple readings taken in a day, summarise
-  # group_by(yday(DATETIME), SampleID) %>%
-  # mutate(CO2_ppm_s_daily = mean(CO2_ppm_s),
-  #        CH4_ppb_s_daily = mean(CH4_ppb_s)) ->
+  group_by(yday(DATETIME), SampleID) %>%
+  mutate(CO2_ppm_s_daily = mean(CO2_ppm_s),
+         CH4_ppb_s_daily = mean(CH4_ppb_s)) %>% 
+  ungroup %>%
+  select(-`yday(DATETIME)`) ->
   summarydata
 
 p <- ggplot(summarydata, aes(inctime_hours, CO2_ppm_s_daily, color = PHASE)) + geom_line(aes(group=SampleID)) + facet_grid(Site~., scales="free")
