@@ -41,3 +41,6 @@ data/gs_valvemap.csv
 # OS files
 .DS_Store
 
+# Picarro files
+data/picarro/
+
