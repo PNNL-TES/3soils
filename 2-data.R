@@ -23,7 +23,12 @@ read_outputfile <- function(fqfn) {
     f <- unz(fqfn)
   }
   
-  d <- read.table(f, header = TRUE)
+  d <- NULL
+  try(d <- read.table(f, header = TRUE))
+  if(is.null(d)) {
+    warning("Could not read", f)
+    return(d)
+  }
   
   print_dims(d)
   
