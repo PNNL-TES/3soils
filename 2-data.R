@@ -37,6 +37,7 @@ read_outputfile <- function(fqfn) {
 # -----------------------------------------------------------------------------
 # scan a directory and process all files in it, returning tempfile names
 process_directory <- function(input_path) {
+  printlog("process_directory", input_path)
   filelist <- list.files(path = input_path, 
                          pattern = "dat$|dat.gz$|dat.zip$", 
                          recursive = TRUE,
@@ -62,14 +63,7 @@ openlog(file.path(outputdir(), paste0(SCRIPTNAME, ".log.txt")), sink = TRUE)
 printlog("Welcome to", SCRIPTNAME)
 printlog("Data directory is", PICARRO_DATA_DIR)
 
-sitelist <- c("dwp", "cpcrw", "sr")
-
-rawdata <- list()
-for(site in sitelist) {
-  rawdata[[site]] <- process_directory(file.path(PICARRO_DATA_DIR, site))
-}
-
-rawdata <- bind_rows(rawdata, .id = "site")
+rawdata <- process_directory(PICARRO_DATA_DIR)
 
 printlog("Writing output file...")
 save_data(rawdata, fn = RAWDATA_FILE, scriptfolder = FALSE)
