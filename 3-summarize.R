@@ -48,7 +48,15 @@ openlog(file.path(outputdir(), paste0(SCRIPTNAME, ".log.txt")), sink = TRUE) # o
 printlog("Welcome to", SCRIPTNAME)
 
 printlog("Reading in raw data...")
-read_csv(RAWDATA_FILE, col_types = "ccccidddd") %>%
+read_csv(RAWDATA_FILE, col_types = cols(filename = col_character(),
+                                        DATE = col_date(format = ""),
+                                        TIME = col_time(format = ""),
+                                        ALARM_STATUS = col_integer(),
+                                        MPVPosition = col_integer(),
+                                        CH4_dry = col_double(),
+                                        CO2_dry = col_double(),
+                                        h2o_reported = col_double()
+)) %>%
   # Convert date/time to POSIXct
   mutate(DATETIME = ymd_hms(paste(DATE, TIME))) %>%
   select(-DATE, -TIME) %>%
@@ -76,23 +84,38 @@ rawdata %>%
   mutate(elapsed_seconds = as.double(difftime(DATETIME, min(DATETIME), units = "secs"))) ->
   rawdata_samples
 
-printlog("Removing ambient samples...")
+printlog("Removing ambient and very long samples...")
 AMBIENT_VALVE <- 16
 rawdata_samples %>%
-  filter(MPVPosition != AMBIENT_VALVE) %>% 
+  filter(MPVPosition != AMBIENT_VALVE, 
+         elapsed_seconds < 120) %>% 
   group_by(samplenum) %>%
   #  filter(max(elapsed_seconds) <= MAX_MEASUREMENT_TIME) %>%
   print_dims("rawdata_samples") ->
   rawdata_samples
 
 printlog("Visualizing...")
-p <- ggplot(rawdata_samples, aes(x = elapsed_seconds, color = yday(DATETIME), group = samplenum)) +
-  facet_wrap(~MPVPosition, scales = "free_y") + 
-  ggtitle("Concentration by date and valve")
-print(p + geom_line(aes(y = CO2_dry)) + xlim(c(0, 60)))
-save_plot("co2_by_valve", ptype = ".png")
-print(p + geom_line(aes(y = CH4_dry)) + xlim(c(0, 60)))
-save_plot("ch4_by_valve", ptype = ".png")
+rawdata_samples %>% 
+  group_by(MPVPosition, elapsed_seconds) %>% 
+  summarise_at(c("CO2_dry", "CH4_dry"), funs(min, max, mean, sd)) -> 
+  rawdata_summary
+
+ggplot(rawdata_summary, aes(elapsed_seconds, CO2_dry_mean)) +
+  geom_line() + 
+  geom_ribbon(aes(ymin = CO2_dry_mean - CO2_dry_sd,
+                                ymax = CO2_dry_mean + CO2_dry_sd), alpha = I(0.5)) +
+  facet_wrap(~MPVPosition) + 
+  ggtitle("CO2 concentration by valve")
+save_plot("raw_co2_by_valve", ptype = ".png")
+
+ggplot(rawdata_summary, aes(elapsed_seconds, CH4_dry_mean)) +
+  geom_line() + 
+  geom_ribbon(aes(ymin = CH4_dry_mean - CH4_dry_sd,
+                  ymax = CH4_dry_mean + CH4_dry_sd), alpha = I(0.5)) +
+  facet_wrap(~MPVPosition) + 
+  ggtitle("CH4 concentration by valve") +
+  coord_cartesian(ylim = c(0, 5))
+save_plot("raw_ch4_by_valve", ptype = ".png")
 
 # -----------------------------------------------------------------------------
 # Load and QC the key and valvemap data
@@ -100,32 +123,28 @@ save_plot("ch4_by_valve", ptype = ".png")
 # The 'valvemap' data maps Picarro valve numbers to sample IDs
 printlog(SEPARATOR)
 printlog("Reading valve and core mapping data...")
-read_csv(VALVEMAP_FILE, na = c("NA", "#VALUE!")) %>% 
+read_csv(VALVEMAP_FILE, na = c("NA", "#VALUE!", "NO VALVE")) %>% 
   mutate(rownum = row_number()) %>% 
   filter(!is.na(SampleID)) %>%
   mutate(Picarro_start = mdy_hm(Start_Date_Time, tz = "America/Los_Angeles"),
          Picarro_stop = mdy_hm(Stop_Date_Time, tz = "America/Los_Angeles"),
          sequence_valve = as.numeric(sequence_valve)) %>% 
-  select(rownum, SampleID, PHASE, Site, Picarro_start, Picarro_stop, sequence_valve, Headspace_height_cm) %>% 
+  select(rownum, SampleID, PHASE, Picarro_start, Picarro_stop, sequence_valve, Headspace_height_cm, NET_Soil_wet_weight_g) %>% 
   arrange(Picarro_start) ->
   valvemap
 
 # The `gs_key` file maps SampleID to (at the moment) core dry mass and pH
 read_csv(KEY_FILE) %>% 
-  select(SampleID, soil_pH_water, DryMass_SoilOnly_g) %>% 
+  select(SampleID, Site, Treatment, soil_pH_water, DryMass_SoilOnly_g) %>% 
   right_join(valvemap, by = "SampleID") ->
   valvemap
 
 # valvemap diagnostic
 valvemap %>% 
-  group_by(Site, SampleID) %>% 
-  summarise_at("DryMass_SoilOnly_g", funs(n(), mean, sd, max, min)) %>% 
-  ggplot(aes(SampleID, mean, color=Site)) + 
-  geom_point() + geom_linerange(aes(ymax = max, ymin = min)) +
-  theme(axis.text.x = element_text(angle = 90)) +
-  ggtitle("DryMass_SoilOnly_g")
+  ggplot(aes(SampleID, DryMass_SoilOnly_g, color = Site)) + 
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90))
 save_plot("diag_DryMass_SoilOnly_g", width = 8, height = 4)
-
 
 
 # -----------------------------------------------------------------------------
@@ -133,54 +152,33 @@ save_plot("diag_DryMass_SoilOnly_g", width = 8, height = 4)
 
 printlog( "Computing summary statistics for each sample..." )
 
-# We want to apply different criteria here, so three different pipelines
-# to compute the min and max gas concentrations
+# Find the time for max CO2 for 90% of the samples
+# We'll use that as a cutoff in the data before computing slopes
+rawdata_samples %>% 
+  group_by(samplenum) %>% 
+  summarise(max_co2_time = nth(elapsed_seconds, which.max(CO2_dry))) ->
+  x
+max_time <- quantile(x$max_co2_time, probs = 0.9)
+printlog("Max CO2 time =", max_time, "seconds")
+
+printlog("Computing CO2 and CH4 slopes...")
 rawdata_samples %>%
-  filter(elapsed_seconds <= MAX_MINCONC_TIME) %>%
+  filter(elapsed_seconds <= max_time) %>%
   group_by(samplenum) %>%
-  summarise(min_CO2 = min(CO2_dry),
-            min_CO2_time = nth(elapsed_seconds, which.min(CO2_dry)),
-            min_CH4 = min(CH4_dry),
-            min_CH4_time = nth(elapsed_seconds, which.min(CH4_dry))) ->
-  summarydata_min
+  summarise(CO2_ppm_s = lm(CO2_dry ~ elapsed_seconds)$coefficients["elapsed_seconds"],
+            CH4_ppb_s = lm(CH4_dry ~ elapsed_seconds)$coefficients["elapsed_seconds"],
+            DATETIME = mean(DATETIME),
+            N = n(),
+            MPVPosition	= mean(MPVPosition),
+            h2o_reported = mean(h2o_reported)) %>% 
+  mutate(DATETIME = with_tz(DATETIME, "America/Los_Angeles")) %>% 
+  print_dims("summarydata") ->
+  summarydata
 
-# Now we want to look for the max concentration AFTER the minimum
-rawdata_samples %>%
-  left_join(summarydata_min, by = "samplenum") ->
-  rawdata_temp
-
-rawdata_temp %>%
-  filter(elapsed_seconds > min_CO2_time & elapsed_seconds < MAX_MAXCONC_TIME) %>%
-  group_by(samplenum) %>%
-  summarise(max_CO2 = max(CO2_dry),
-            max_CO2_time = nth(elapsed_seconds, which.max(CO2_dry))) ->
-  summarydata_maxCO2
-rawdata_temp %>%
-  filter(elapsed_seconds > min_CH4_time & elapsed_seconds < MAX_MAXCONC_TIME) %>%
-  group_by(samplenum) %>%
-  summarise(max_CH4 = max(CH4_dry),
-            max_CH4_time = nth(elapsed_seconds, which.max(CH4_dry))) ->
-  summarydata_maxCH4
-
-# Misc other data, and match up with valve map entries
-rawdata_samples %>%
-  group_by(samplenum) %>%
-  summarise(
-    DATETIME = mean(DATETIME),
-    N = n(),
-    MPVPosition	= mean(MPVPosition),
-    h2o_reported = mean(h2o_reported)) %>% 
-  mutate(DATETIME = with_tz(DATETIME, "America/Los_Angeles")) ->
-  summarydata_other
-
-# Finally, merge pieces together to form final summary data set
-printlog("Removing N=1 and MPVPosition=0 data, and merging...")
-summarydata_other %>%
-  filter(N > 1) %>% # N=1 observations are...? Picarro quirk
-  filter(MPVPosition > 0) %>% # ? Picarro quirk
-  left_join(summarydata_min, by = "samplenum") %>%
-  left_join(summarydata_maxCO2, by = "samplenum") %>% 
-  left_join(summarydata_maxCH4, by = "samplenum") ->
+printlog("Filtering for at least 3 data points...")
+summarydata %>% 
+  filter(N >= 3) %>% 
+  print_dims("summarydata") ->
   summarydata
 
 printlog("Joining key data and Picarro output...")
@@ -188,8 +186,6 @@ newdata <- list()
 valvemap$picarro_records <- 0
 #summarydata$SampleID <- NA_character_
 for(i in seq_len(nrow(valvemap))) {
-  # summarydata$SampleID[summarydata$DATETIME >= valvemap$Picarro_start[i] & 
-  #                      summarydata$DATETIME <= valvemap$Picarro_stop[i]] <- valvemap$SampleID[i]
   d <- filter(summarydata, DATETIME >= valvemap$Picarro_start[i], DATETIME <= valvemap$Picarro_stop[i])
   valvemap$picarro_records[i] <- nrow(d)
   newdata[[i]] <- left_join(valvemap[i,], d, by = c("sequence_valve" = "MPVPosition"))
