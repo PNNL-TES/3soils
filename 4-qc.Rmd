@@ -8,14 +8,12 @@ output: html_document
 ```{r setup, include=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 source("0-functions.R")
-summarydata <- read_csv(SUMMARYDATA_FILE)
-valvemap <- read_csv(VALVEMAP_COMBINED_FILE)
 ```
 
-## summarydata statistics
-
-```{r}
-
+```{r read_data, echo=FALSE, cache=TRUE, message=FALSE}
+summarydata <- read_csv(SUMMARYDATA_FILE)
+summarydata_clean <- read_csv(SUMMARYDATA_CLEAN_FILE, guess_max = 1e6)
+valvemap <- read_csv(VALVEMAP_COMBINED_FILE)
 ```
 
 ## valvemap data with no Picarro matches:
@@ -23,15 +21,14 @@ valvemap <- read_csv(VALVEMAP_COMBINED_FILE)
 ```{r, echo = FALSE}
 valvemap %>% 
   filter(picarro_records == 0) %>% 
-  select(SampleID, Site, Treatment, Picarro_start, Picarro_stop, sequence_valve, picarro_records) ->
+  select(SampleID, Site, Treatment, Picarro_start, sequence_valve, picarro_records) ->
   unmatched_valvemap
 ```
 
 `r nrow(unmatched_valvemap)` of `r nrow(valvemap)` valve map entries had no matches in Picarro data.
 
 ```{r, echo = FALSE}
-# QC - look for data with no matches
-print(unmatched_valvemap, n = 50)
+knitr::kable(unmatched_valvemap, caption = "Unmatched valvemap data")
 qplot(Picarro_start, SampleID, color = picarro_records == 0, data = valvemap) +
   ggtitle("unmatched_valvemap_data") + scale_color_discrete("unmatched")
 ```
@@ -49,3 +46,32 @@ qplot(DATETIME, MPVPosition, color = unmatched, data=summarydata) +
 
 ```
 
+## summarydata statistics
+
+There are `r nrow(summarydata_clean)` different samples.
+
+```{r, echo=FALSE}
+#hist(summarydata_clean$CO2_ppm_s)
+#hist(summarydata_clean$CH4_ppb_s)
+summarydata_clean %>% 
+  select(CO2_ppm_s, CH4_ppb_s, N) %>% 
+  summary
+summarydata_clean %>% 
+  filter(!is.na(CO2_ppm_s)) %>% 
+  group_by(Site) %>% 
+  summarise(CO2_ppm_s = mean(CO2_ppm_s), CH4_ppb_s = mean(CH4_ppb_s), Picarro_obs = sum(N), N = n()) %>% 
+  knitr::kable(caption = "Summary data by site")
+summarydata_clean %>% 
+  filter(!is.na(CO2_ppm_s)) %>% 
+  group_by(SampleID) %>% 
+  summarise(CO2_ppm_s = mean(CO2_ppm_s), CH4_ppb_s = mean(CH4_ppb_s), Picarro_obs = sum(N), N = n()) -> 
+  x
+knitr::kable(x, caption = "Summary data by sample")
+
+negs <- filter(x, CO2_ppm_s < 0)$SampleID
+qplot(CO2_ppm_s, data = filter(summarydata_clean, SampleID %in% negs), bins = 30) + 
+  facet_wrap(~SampleID) + ggtitle("Negative-CO2 flux samples")
+
+qplot(DATETIME, CO2_ppm_s, data=summarydata_clean, group=SampleID, geom="line", color = Site) + facet_wrap(~PHASE)
+qplot(DATETIME, CH4_ppb_s, data=summarydata_clean, group=SampleID, geom="line", color = Site) + facet_wrap(~PHASE)
+```
