@@ -44,3 +44,4 @@ data/gs_valvemap.csv
 # Picarro files
 data/picarro/
 
+*.html

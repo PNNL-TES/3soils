@@ -194,39 +194,19 @@ bind_rows(newdata) %>%
   select(-Picarro_start, -Picarro_stop) ->
   newdata
 
-# QC - look for data with no matches
-valvemap %>% 
-  filter(picarro_records == 0) %>% 
-  select(SampleID, Site, Treatment, Picarro_start, Picarro_stop, sequence_valve, picarro_records) ->
-  unmatched_valvemap
-if(nrow(unmatched_valvemap)) {
-  printlog(nrow(unmatched_valvemap), "of", nrow(valvemap), "valve map entries had no matches in Picarro data!")
-  print(unmatched_valvemap, n = 50)
-  PROBLEM <- TRUE
-}
-p <- qplot(Picarro_start, SampleID, color = picarro_records == 0, data = valvemap) +
-  ggtitle("unmatched_valvemap_data") + scale_color_discrete("unmatched")
-print(p)
-save_plot("unmatched_valvemap_data")
 
-summarydata$unmatched <- summarydata$samplenum %in% newdata$samplenum
-if(any(summarydata$unmatched)) {
-  printlog(sum(summarydata$unmatched),"of", nrow(summarydata), "Picarro samples had no matches in valvemap data!")
-  PROBLEM <- TRUE
-}
-p <- qplot(DATETIME, MPVPosition, color = unmatched, data=summarydata) +
-  ggtitle("unmatched_picarro_data")
-print(p)
-save_plot("unmatched_picarro_data")
+summarydata$matched <- summarydata$samplenum %in% newdata$samplenum
 summarydata %>%
-  filter(unmatched) %>% 
-  save_data("unmatched_picarro_data.csv")
+  filter(!matched) %>% 
+  save_data(fn = "outputs/unmatched_picarro_data.csv", scriptfolder = FALSE)
 
 # -----------------------------------------------------------------------------
 # Done! 
 
-save_data(newdata, fn = SUMMARYDATA_FILE, scriptfolder = FALSE)
+save_data(summarydata, fn = SUMMARYDATA_FILE, scriptfolder = FALSE)
+save_data(newdata, fn = SUMMARYDATA_CLEAN_FILE, scriptfolder = FALSE)
 save_data(rawdata_samples, fn = RAWDATA_SAMPLES_FILE, scriptfolder = FALSE)
+save_data(valvemap, fn = "valvemap_combined.csv", scriptfolder = FALSE)
 
 printlog("All done with", SCRIPTNAME)
 closelog()

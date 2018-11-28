@@ -1,0 +1,51 @@
+---
+title: "4-qc"
+author: "Ben Bond-Lamberty"
+date: "11/28/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+source("0-functions.R")
+summarydata <- read_csv(SUMMARYDATA_FILE)
+valvemap <- read_csv(VALVEMAP_COMBINED_FILE)
+```
+
+## summarydata statistics
+
+```{r}
+
+```
+
+## valvemap data with no Picarro matches:
+
+```{r, echo = FALSE}
+valvemap %>% 
+  filter(picarro_records == 0) %>% 
+  select(SampleID, Site, Treatment, Picarro_start, Picarro_stop, sequence_valve, picarro_records) ->
+  unmatched_valvemap
+```
+
+`r nrow(unmatched_valvemap)` of `r nrow(valvemap)` valve map entries had no matches in Picarro data.
+
+```{r, echo = FALSE}
+# QC - look for data with no matches
+print(unmatched_valvemap, n = 50)
+qplot(Picarro_start, SampleID, color = picarro_records == 0, data = valvemap) +
+  ggtitle("unmatched_valvemap_data") + scale_color_discrete("unmatched")
+```
+
+## Picarro data with no valvemap matches:
+
+```{r, echo=FALSE}
+```
+
+`r sum(summarydata$unmatched)` of `r nrow(summarydata)` Picarro samples had no matches in valvemap data.
+
+```{r}
+qplot(DATETIME, MPVPosition, color = unmatched, data=summarydata) +
+  ggtitle("unmatched_picarro_data")
+
+```
+
