@@ -194,43 +194,38 @@ bind_rows(newdata) %>%
   select(-Picarro_start, -Picarro_stop) ->
   newdata
 
-# Diagnostic plot - how well do data match?
-p <- qplot(DATETIME, sequence_valve, data=newdata, color = SampleID, geom="jitter")
+# QC - look for data with no matches
+valvemap %>% 
+  filter(picarro_records == 0) %>% 
+  select(SampleID, Site, Treatment, Picarro_start, Picarro_stop, sequence_valve, picarro_records) ->
+  unmatched_valvemap
+if(nrow(unmatched_valvemap)) {
+  printlog(nrow(unmatched_valvemap), "of", nrow(valvemap), "valve map entries had no matches in Picarro data!")
+  print(unmatched_valvemap, n = 50)
+  PROBLEM <- TRUE
+}
+p <- qplot(Picarro_start, SampleID, color = picarro_records == 0, data = valvemap) +
+  ggtitle("unmatched_valvemap_data") + scale_color_discrete("unmatched")
 print(p)
-save_plot("valvemap_diagnostic1")
+save_plot("unmatched_valvemap_data")
 
-p <- qplot(Picarro_start, SampleID, color=picarro_records>0, data=valvemap)
+summarydata$unmatched <- summarydata$samplenum %in% newdata$samplenum
+if(any(summarydata$unmatched)) {
+  printlog(sum(summarydata$unmatched),"of", nrow(summarydata), "Picarro samples had no matches in valvemap data!")
+  PROBLEM <- TRUE
+}
+p <- qplot(DATETIME, MPVPosition, color = unmatched, data=summarydata) +
+  ggtitle("unmatched_picarro_data")
 print(p)
-save_plot("valvemap_diagnostic2")
-
-
-printlog("Computing per-second rates...")
-newdata %>%
-  filter(!is.na(DATETIME), !is.na(Site)) %>% 
-  group_by(SampleID, PHASE, Site) %>%
-  mutate(CO2_ppm_s = (max_CO2 - min_CO2) / (max_CO2_time - min_CO2_time),
-         CH4_ppb_s = (max_CH4 - min_CH4) / (max_CH4_time - min_CH4_time),
-         inctime_hours = as.numeric(difftime(DATETIME, min(DATETIME, na.rm = TRUE), units = "hours"))) %>%
-  # If multiple readings taken in a day, summarise
-  group_by(yday(DATETIME), SampleID) %>%
-  mutate(CO2_ppm_s_daily = mean(CO2_ppm_s),
-         CH4_ppb_s_daily = mean(CH4_ppb_s)) %>% 
-  ungroup %>%
-  select(-`yday(DATETIME)`) ->
-  summarydata
-
-p <- ggplot(summarydata, aes(inctime_hours, CO2_ppm_s_daily, color = PHASE)) + geom_line(aes(group=SampleID)) + facet_grid(Site~., scales="free")
-print(p)
-save_plot("sanity_CO2")
-p <- ggplot(summarydata, aes(inctime_hours, CH4_ppb_s_daily, color = PHASE)) + geom_line(aes(group=SampleID)) + facet_grid(Site~., scales="free")
-print(p)
-save_plot("sanity_CH4")
-
+save_plot("unmatched_picarro_data")
+summarydata %>%
+  filter(unmatched) %>% 
+  save_data("unmatched_picarro_data.csv")
 
 # -----------------------------------------------------------------------------
 # Done! 
 
-save_data(summarydata, fn = SUMMARYDATA_FILE, scriptfolder = FALSE)
+save_data(newdata, fn = SUMMARYDATA_FILE, scriptfolder = FALSE)
 save_data(rawdata_samples, fn = RAWDATA_SAMPLES_FILE, scriptfolder = FALSE)
 
 printlog("All done with", SCRIPTNAME)
