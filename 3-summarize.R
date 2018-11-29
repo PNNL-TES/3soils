@@ -88,9 +88,8 @@ printlog("Removing ambient and very long samples...")
 AMBIENT_VALVE <- 16
 rawdata_samples %>%
   filter(MPVPosition != AMBIENT_VALVE, 
-         elapsed_seconds < 120) %>% 
+         elapsed_seconds < MAX_MEASUREMENT_TIME) %>% 
   group_by(samplenum) %>%
-  #  filter(max(elapsed_seconds) <= MAX_MEASUREMENT_TIME) %>%
   print_dims("rawdata_samples") ->
   rawdata_samples
 
@@ -151,35 +150,34 @@ save_plot("diag_DryMass_SoilOnly_g", width = 8, height = 4)
 # Compute concentration changes and match the Picarro data with valvemap data
 
 printlog( "Computing summary statistics for each sample..." )
-
-# Find the time for max CO2 for 90% of the samples
-# We'll use that as a cutoff in the data before computing slopes
 rawdata_samples %>% 
+  ungroup %>% 
+  # we only look at first 45 seconds, after first few
+  filter(elapsed_seconds <= MAX_MAXCONC_TIME,
+         elapsed_seconds >= MIN_MEASUREMENT_TIME) %>% 
+  # find max CO2 time for each sample
   group_by(samplenum) %>% 
-  summarise(max_co2_time = nth(elapsed_seconds, which.max(CO2_dry))) ->
-  x
-max_time <- quantile(x$max_co2_time, probs = 0.9)
-printlog("Max CO2 time =", max_time, "seconds")
-
-printlog("Computing CO2 and CH4 slopes...")
-rawdata_samples %>%
-  filter(elapsed_seconds <= max_time) %>%
+  mutate(N = n(),
+         max_co2_time = nth(elapsed_seconds, which.max(CO2_dry))) %>%
+  # filter for at least 3 data points and for max CO2 time window
+  filter(N >= 3, 
+         elapsed_seconds <= max_co2_time) %>%
+  # now compute the slope for each group
+  # stupid to fit each model twice, and I could use do(), but this is easy...
   group_by(samplenum) %>%
   summarise(CO2_ppm_s = lm(CO2_dry ~ elapsed_seconds)$coefficients["elapsed_seconds"],
             CH4_ppb_s = lm(CH4_dry ~ elapsed_seconds)$coefficients["elapsed_seconds"],
+            r2_CO2 = summary(lm(CO2_dry ~ elapsed_seconds))$adj.r.squared,
+            r2_CH4 = summary(lm(CH4_dry ~ elapsed_seconds))$adj.r.squared,
             DATETIME = mean(DATETIME),
             N = n(),
             MPVPosition	= mean(MPVPosition),
             h2o_reported = mean(h2o_reported)) %>% 
-  mutate(DATETIME = with_tz(DATETIME, "America/Los_Angeles")) %>% 
   print_dims("summarydata") ->
   summarydata
 
-printlog("Filtering for at least 3 data points...")
-summarydata %>% 
-  filter(N >= 3) %>% 
-  print_dims("summarydata") ->
-  summarydata
+printlog("Time zone conversion...")
+summarydata <- mutate(summarydata, DATETIME = with_tz(DATETIME, "America/Los_Angeles"))
 
 printlog("Joining key data and Picarro output...")
 newdata <- list()
