@@ -45,3 +45,4 @@ data/gs_valvemap.csv
 data/picarro/
 
 *.html
+.DS_Store
