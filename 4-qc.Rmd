@@ -56,34 +56,71 @@ There are `r nrow(summarydata_clean)` different samples.
 #hist(summarydata_clean$CH4_ppb_s)
 summarydata_clean %>% 
   select(CO2_ppm_s, CH4_ppb_s, N) %>% 
-  summary
+  summary %>% 
+  knitr::kable(caption = "Summary data overall")
 summarydata_clean %>% 
   filter(!is.na(CO2_ppm_s)) %>% 
-  group_by(Site) %>% 
+  group_by(Site, PHASE) %>% 
   summarise(CO2_ppm_s = mean(CO2_ppm_s), CH4_ppb_s = mean(CH4_ppb_s), Picarro_obs = sum(N), N = n()) %>% 
-  knitr::kable(caption = "Summary data by site")
+  knitr::kable(caption = "Summary data by site and phase")
 summarydata_clean %>% 
   filter(!is.na(CO2_ppm_s)) %>% 
   group_by(SampleID, PHASE) %>% 
-  summarise(CO2_ppm_s = mean(CO2_ppm_s), CH4_ppb_s = mean(CH4_ppb_s), Picarro_obs = sum(N), N = n()) -> 
+  summarise(CO2_ppm_s = round(mean(CO2_ppm_s, na.rm = TRUE), 2), 
+            CH4_ppb_s = round(mean(CH4_ppb_s, na.rm = TRUE), 4),
+            Samples = sum(N), 
+            Mean_r2 = round(mean(r2_CO2, na.rm = TRUE), 2)) -> 
   sumry
 knitr::kable(sumry, caption = "Summary data by sample")
+negs <- filter(sumry, CO2_ppm_s < 0)
 ```
 
 ### Negative CO2 flux samples
 
+There are `r nrow(negs)` negative-flux samples.
+
 ```{r negs, echo=FALSE}
-negs <- filter(sumry, CO2_ppm_s < 0)
-qplot(CO2_ppm_s, data = filter(summarydata_clean, SampleID %in% negs$SampleID), bins = 30) + 
-  facet_wrap(~SampleID) + ggtitle("Negative-CO2 flux samples")
+if(nrow(negs)) {
+  qplot(CO2_ppm_s, data = filter(summarydata_clean, SampleID %in% negs$SampleID), bins = 30) + 
+    facet_wrap(~SampleID) + ggtitle("Negative-CO2 flux samples")
+  
+  qplot(DATETIME, CO2_ppm_s, data=summarydata_clean, group=SampleID, geom="line", color = Site) + facet_wrap(~PHASE)
+  qplot(DATETIME, CH4_ppb_s, data=summarydata_clean, group=SampleID, geom="line", color = Site) + facet_wrap(~PHASE)
+  
+  negs %>% 
+    select(SampleID, PHASE) %>% 
+    left_join(summarydata_clean, by = c("SampleID", "PHASE")) %>% 
+    left_join(select(rawdata_samples, samplenum, elapsed_seconds, CO2_dry), by = "samplenum") %>% 
+    ggplot(aes(elapsed_seconds, CO2_dry, group = samplenum)) + 
+    geom_line(alpha = I(0.5)) + facet_wrap(~SampleID) + xlim(c(0, 25))
+}
+```
 
-qplot(DATETIME, CO2_ppm_s, data=summarydata_clean, group=SampleID, geom="line", color = Site) + facet_wrap(~PHASE)
-qplot(DATETIME, CH4_ppb_s, data=summarydata_clean, group=SampleID, geom="line", color = Site) + facet_wrap(~PHASE)
+### Regression fits
 
-negs %>% 
-  select(SampleID, PHASE) %>% 
-  left_join(summarydata_clean, by = c("SampleID", "PHASE")) %>% 
-  left_join(select(rawdata_samples, samplenum, elapsed_seconds, CO2_dry), by = "samplenum") %>% 
-  ggplot(aes(elapsed_seconds, CO2_dry, group = samplenum)) + geom_line() + facet_wrap(~SampleID) + xlim(c(0, 25))
+We estimate the CO2 (ppm/s) and CH4 (ppb/s) rates of change by fitting a linear regression to the Picarro concentration data, excluding data in the first `r MIN_MEASUREMENT_TIME` seconds (as the system is stabilizing) and up to the max CO2 time within the first `r MAX_MAXCONC_TIME` seconds. Adjusted R2 is used to capture the quality of this linear fit; poor values may indicate some kind of fitting problem to explore. The overall R2 distribution:
+
+```{r R2-overall, echo=FALSE}
+summary(summarydata_clean$r2_CO2)
+summarydata_clean %>% 
+  filter(is.finite(r2_CO2)) %>% 
+  ggplot(aes(r2_CO2)) + geom_histogram(bins = 30)
+```
+
+Overall fits are very good (median adjusted R2 = `r round(median(summarydata_clean$r2_CO2, na.rm = TRUE), 0) * 100`%).
+
+```{r R2}
+summarydata_clean %>% 
+  filter(is.finite(r2_CO2)) %>% 
+  ggplot(aes(r2_CO2, color = PHASE)) + geom_density() + ggtitle("CO2 R2 distribution by phase")
+```
+
+### Missing mass data
+
+```{r missing-mass}
+summarydata_clean %>% 
+  filter(!is.na(DATETIME)) %>% 
+  ggplot(aes(DATETIME, SampleID, color = is.na(NET_Soil_wet_weight_g))) +
+  geom_point() + scale_color_discrete("Missing mass?")
 ```
 
