@@ -118,9 +118,25 @@ summarydata_clean %>%
 ### Missing mass data
 
 ```{r missing-mass}
+sdata %>% 
+  filter(is.na(DryMass_SoilOnly_g)) %>% 
+  group_by(SampleID, PHASE) %>% 
+  summarise(N = n()) %>% 
+  knitr::kable(caption = "Missing dry mass data")
+
 summarydata_clean %>% 
   filter(!is.na(DATETIME)) %>% 
   ggplot(aes(DATETIME, SampleID, color = is.na(NET_Soil_wet_weight_g))) +
   geom_point() + scale_color_discrete("Missing mass?")
+```
+
+### Missing headspace data
+
+```{r missing-headspace}
+summarydata_clean %>% 
+  filter(is.na(Headspace_height_cm)) %>% 
+  group_by(SampleID, PHASE) %>% 
+  summarise(N = n()) %>% 
+  knitr::kable(caption = "Missing headspace data")
 ```
 
