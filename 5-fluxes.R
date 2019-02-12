@@ -108,25 +108,30 @@ save_data(fluxdata, fn = FLUXDATA_FILE, scriptfolder = FALSE)
 
 # Peyton's cutoffs from 2018-12-04 email
 fluxdata %>% 
-  mutate(cutoff = if_else(grepl("SATURATION", PHASE), 7.5,
-                          if_else(grepl("INCUBATION", PHASE), 600, 999))) %>% 
+  mutate(cutoff = if_else(PHASE %in% c("SATURATION_IMMEDIATE", 
+                                       "SATURATION_SATURATION", 
+                                       "FIELD_MOIST_SATURATION", 
+                                       "DROUGHT_SATURATION"), 7.5, 999),
+         cutoff = if_else(PHASE %in% c("DROUGHT_INCUBATION", 
+                                       "FIELD_MOIST_INCUBATION", 
+                                       "SATURATION_INCUBATION"), 600, cutoff)) %>% 
   filter(inctime_hours <= cutoff) ->
   fluxdata_cutoff
 
 
 p_collar_co2 <- ggplot(fluxdata_cutoff, aes(inctime_hours, cumCO2_flux_mgC_gSoil, group = SampleID, color = Site)) + 
   geom_point() + geom_line() + geom_text(aes(x = inctime_hours * 1.1, label = label), size = 3) +
-  facet_wrap(~PHASE, scales = "free") +
+  facet_wrap(~PHASE, scales = "free") + theme(strip.text = element_text(size = 7)) +
   ggtitle("Cumulative CO2 emissions by core")
 print(p_collar_co2)
-save_plot("cumulative_co2_inc")
+save_plot("cumulative_co2_inc", width = 8, height = 6)
 
 p_collar_ch4 <- ggplot(fluxdata_cutoff, aes(inctime_hours, cumCH4_flux_mgC_gSoil, group = SampleID, color = Site)) + 
   geom_point() + geom_line() + geom_text(aes(x = inctime_hours * 1.1, label = label), size = 3) +
-  facet_wrap(~PHASE, scales = "free") +
-  ggtitle("Cumulative CH4 emissions by core")
+  facet_wrap(~PHASE, scales = "free") + theme(strip.text = element_text(size = 7)) +
+  ggtitle("Cumulative CH4 emissions by core", width = 8, height = 6)
 print(p_collar_ch4)
-save_plot("cumulative_ch4_inc")
+save_plot("cumulative_ch4_inc", width = 8, height = 6)
 
 
 # Plot final (end of incubation) totals
@@ -140,15 +145,15 @@ save_data(fluxdata_final)
 
 p_final_co2 <- ggplot(fluxdata_final, aes(Site, cumCO2_flux_mgC_gSoil, color = Site)) +
   geom_boxplot() + geom_point() +
-  facet_wrap(~PHASE, scales = "free")
+  facet_wrap(~PHASE, scales = "free") + theme(strip.text = element_text(size = 7))
 print(p_final_co2)
-save_plot("final_co2_inc")
+save_plot("final_co2_inc", width = 8, height = 6)
 p_final_ch4 <- ggplot(fluxdata_final, aes(Site, cumCH4_flux_mgC_gSoil, color = Site)) +
   geom_boxplot() + geom_point() +
   geom_hline(yintercept = 0, linetype = 2) +
-  facet_wrap(~PHASE, scales = "free")
+  facet_wrap(~PHASE, scales = "free") + theme(strip.text = element_text(size = 7))
 print(p_final_ch4)
-save_plot("final_ch4_inc")
+save_plot("final_ch4_inc", width = 8, height = 6)
 
 
 # DON'T KNOW IF ANYTHING WORKS BEYOND HERE!!!!!

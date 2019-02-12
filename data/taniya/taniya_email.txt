@@ -1,0 +1,24 @@
+Hi Ben,
+Please find attached the template for steps to obtain dissolved (aqueous) and total gas concentrations. I have added example calculations to the spreadsheet from this past summer in rows 5 (methane) and 6 (carbon dioxode). 
+
+I tried to breakdown the multiple steps as much as possible; please let me know if you have any questions.
+
+Importantly, the values for the Henry's constant are in partial pressure (atm)/mole fraction. I have included the citations and sources for your reference. I inherited these values from my mentors while in Oak Ridge, and never did read the empirical studies (from the 1980s). I was able to locate a source from Colorado State that was comprehensive in listing values for a number of analytes, and that matched my values.
+
+Hope this is useful!
+Thanks,
+Taniya
+--------------------------------------------
+Taniya RoyChowdhury, Ph.D.
+Principal Faculty Specialist
+Google Scholar Citations
+
+Microbiology & Molecular Biogeochemistry
+Environmental Science and Technology Department
+University of Maryland
+1204 HJ Patterson Hall (office)
+2103 Microbiology Building (lab)
+College Park, MD 20742
+
+Mobile Phone: 6146192131
+
