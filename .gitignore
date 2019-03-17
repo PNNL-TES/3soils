@@ -35,8 +35,6 @@ vignettes/*.pdf
 
 # Project files
 outputs/
-data/gs_key.csv
-data/gs_valvemap.csv
 
 # OS files
 .DS_Store
