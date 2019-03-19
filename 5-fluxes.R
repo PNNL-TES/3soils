@@ -37,8 +37,8 @@ sdata %>%
 # Water content computation
 sdata %>% 
   replace_na(list(Additional_Wt_toRemove = 0)) %>% 
-  mutate(sm_gravimetric = (Total_core_mass_pot_pie_pans_g - DryMass_NONsoil_ALL_g) / DryMass_SoilOnly_g,
-         sm_volumetric = (Total_core_mass_pot_pie_pans_g - DryMass_NONsoil_ALL_g - Additional_Wt_toRemove) / VolumeSoil_cm3) -> 
+  mutate(sm_gravimetric = (Total_core_mass_pot_pie_pans_g - DryMass_SoilOnly_g - DryMass_NONsoil_ALL_g - Additional_Wt_toRemove) / DryMass_SoilOnly_g,
+         sm_volumetric = (Total_core_mass_pot_pie_pans_g - DryMass_SoilOnly_g - DryMass_NONsoil_ALL_g - Additional_Wt_toRemove) / VolumeSoil_cm3) -> 
   sdata
 
 # Summary plots and table
@@ -53,9 +53,22 @@ save_plot("wc_volumetric_time", height = 4, width = 6)
 
 sdata %>% 
   group_by(TREATMENT_PHASE, Site) %>% 
-  summarise(sm_gravimetric = mean(sm_gravimetric, na.rm = TRUE),
-            sm_volumetric = mean(sm_volumetric, na.rm = TRUE)) %>% 
-  print(n = 50)
+  summarise(sm_grav = mean(sm_gravimetric, na.rm = TRUE),
+            sm_grav_sd = sd(sm_gravimetric, na.rm = TRUE),
+            sm_vol = mean(sm_volumetric, na.rm = TRUE),
+            sm_vol_sd = sd(sm_volumetric, na.rm = TRUE)) ->
+  sd_wc_summary
+
+print(sd_wc_summary, n = 50)
+
+qplot(TREATMENT_PHASE, sm_grav, color = Site, data=sd_wc_summary) + 
+  geom_errorbar(aes(ymin = sm_grav - sm_grav_sd, ymax = sm_grav + sm_grav_sd)) + 
+  facet_wrap(~Site) + coord_flip()
+save_plot("wc_grav_summary", width = 6, height = 4)
+qplot(TREATMENT_PHASE, sm_vol, color = Site, data=sd_wc_summary) + 
+  geom_errorbar(aes(ymin = sm_vol - sm_vol_sd, ymax = sm_vol + sm_vol_sd)) + 
+  facet_wrap(~Site) + coord_flip()
+save_plot("wc_vol_summary", width = 6, height = 4)
 
 # -----------------------------------------------------------------------------
 # Flux computation
