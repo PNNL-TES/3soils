@@ -122,19 +122,24 @@ save_plot("raw_ch4_by_valve", ptype = ".png")
 # The 'valvemap' data maps Picarro valve numbers to sample IDs
 printlog(SEPARATOR)
 printlog("Reading valve and core mapping data...")
-read_csv(VALVEMAP_FILE, na = c("NA", "#VALUE!", "NO VALVE")) %>% 
+read_csv(VALVEMAP_FILE, na = c("NA", "#VALUE!", "NO VALVE", "NO WEIGHT", "", "DATA?")) %>% 
   mutate(rownum = row_number()) %>% 
   filter(!is.na(SampleID)) %>%
   mutate(Picarro_start = mdy_hm(Start_Date_Time, tz = "America/Los_Angeles"),
          Picarro_stop = mdy_hm(Stop_Date_Time, tz = "America/Los_Angeles"),
          sequence_valve = as.numeric(sequence_valve)) %>% 
-  select(rownum, SampleID, PHASE, Picarro_start, Picarro_stop, sequence_valve, Headspace_height_cm, NET_Soil_wet_weight_g) %>% 
+  select(rownum, SampleID, TREATMENT_PHASE, sequence_valve,
+         Picarro_start,
+         Picarro_stop, 
+         Total_core_mass_pot_pie_pans_g, Additional_Wt_toRemove) %>% 
   arrange(Picarro_start) ->
   valvemap
 
 # The `gs_key` file maps SampleID to (at the moment) core dry mass and pH
 read_csv(KEY_FILE) %>% 
-  select(SampleID, Site, Treatment, soil_pH_water, DryMass_SoilOnly_g) %>% 
+  select(SampleID, Site, Treatment, HeadSpace_Ht_cm, 
+         soil_pH_water_airdried, 
+         DryMass_SoilOnly_g, DryMass_NONsoil_ALL_g, VolumeSoil_cm3) %>% 
   right_join(valvemap, by = "SampleID") ->
   valvemap
 
@@ -190,7 +195,7 @@ for(i in seq_len(nrow(valvemap))) {
 }
 bind_rows(newdata) %>% 
   select(-Picarro_start, -Picarro_stop) ->
-  newdata
+  summarydata_clean
 
 
 summarydata$matched <- summarydata$samplenum %in% newdata$samplenum
@@ -202,7 +207,7 @@ summarydata %>%
 # Done! 
 
 save_data(summarydata, fn = SUMMARYDATA_FILE, scriptfolder = FALSE)
-save_data(newdata, fn = SUMMARYDATA_CLEAN_FILE, scriptfolder = FALSE)
+save_data(summarydata_clean, fn = SUMMARYDATA_CLEAN_FILE, scriptfolder = FALSE)
 save_data(rawdata_samples, fn = RAWDATA_SAMPLES_FILE, scriptfolder = FALSE)
 save_data(valvemap, fn = "valvemap_combined.csv", scriptfolder = FALSE)
 
