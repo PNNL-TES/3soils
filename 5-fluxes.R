@@ -177,17 +177,27 @@ save_data(fluxdata_cutoff)
 
 p_collar_co2 <- ggplot(fluxdata_cutoff, aes(inctime_hours, `cumCO2 flux (mgC/gSoil)`, group = SampleID, color = Site)) + 
   geom_point() + geom_line() + geom_text(aes(x = inctime_hours * 1.1, label = label), size = 3) +
-  facet_wrap(~TREATMENT_PHASE, scales = "free") + theme(strip.text = element_text(size = 7)) +
   ggtitle("Cumulative CO2 emissions by core")
-print(p_collar_co2)
+p_collar_co2_1 <- p_collar_co2 +
+  facet_wrap(~TREATMENT_PHASE, scales = "free") + theme(strip.text = element_text(size = 7))
+print(p_collar_co2_1)
 save_plot("cumulative_co2_by_core", width = 8, height = 6)
+p_collar_co2_2 <- p_collar_co2 +
+  facet_wrap(~TREATMENT_PHASE) + theme(strip.text = element_text(size = 7))
+print(p_collar_co2_2)
+save_plot("cumulative_co2_by_core_samescale", width = 8, height = 6)
 
 p_collar_ch4 <- ggplot(fluxdata_cutoff, aes(inctime_hours, `cumCH4 flux (mgC/gSoil)`, group = SampleID, color = Site)) + 
   geom_point() + geom_line() + geom_text(aes(x = inctime_hours * 1.1, label = label), size = 3) +
-  facet_wrap(~TREATMENT_PHASE, scales = "free") + theme(strip.text = element_text(size = 7)) +
   ggtitle("Cumulative CH4 emissions by core")
-print(p_collar_ch4)
+p_collar_ch4_1 <- p_collar_ch4 +
+  facet_wrap(~TREATMENT_PHASE, scales = "free") + theme(strip.text = element_text(size = 7))
+print(p_collar_ch4_1)
 save_plot("cumulative_ch4_by_core", width = 8, height = 6)
+p_collar_ch4_2 <- p_collar_ch4 +
+  facet_wrap(~TREATMENT_PHASE) + theme(strip.text = element_text(size = 7))
+print(p_collar_ch4_2)
+save_plot("cumulative_ch4_by_core_samescale", width = 8, height = 6)
 
 # Plot final (end of incubation) totals
 fluxdata_cutoff %>% 
